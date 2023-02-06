@@ -1,0 +1,183 @@
+# 다양한 연관관계 매핑
+
+- 다중성
+  - 다대일
+  - 일대다
+  - 일대일
+  - 다대다
+
+다중성을 판단하기 어려울 때에는 반대방향을 생각해보면 된다. 다대다는 실무에서 거의 사용하지 않는다.
+
+다중성과 단방향을 고려한 가능한 모든 연관관계는 다음과 같다
+- 다대일 : 단방향, 양방향
+- 일대다 : 단방향, 양방향
+- 일대일 : 주 테이블 단방향, 양방향
+- 일대일 : 대상 테이블 단방향, 양방향
+- 다대다 : 단방향, 양방향
+
+## 다대일
+다대일 관계의 반대 방향은 항상 일대다 관계이고 반대는 다대일 관계이다. 데이터 베이스 테이블의 일, 다 관계에서 외래키는 항상 다쪽에 있다.
+따라서 객체 양방향 관계에서 연관관계의 주인은 항상 다쪽이다.
+
+### 다대일 단방향 [N:1]
+
+```java
+
+import javax.persistence.Column;
+import javax.persistence.Entity;
+import javax.persistence.Id;
+import javax.persistence.JoinColumn;
+import javax.persistence.ManyToOne;
+
+@Entity
+public class Member {
+
+  @Id
+  private Long id;
+  @ManyToOne
+  @JoinColumn(name = "TEAM_ID")
+  private Team team;
+
+  //...
+}
+
+@Entity
+public class Team {
+
+  @Id
+  @Column(name ="TEAM_ID")
+  private Long id;
+  
+  private String name;
+}
+```
+위는 단방향 관계이다. 
+
+### 다대일 양방향 [N:1], [1:N]
+
+```java
+
+import java.util.ArrayList;
+import javax.persistence.Column;
+import javax.persistence.Entity;
+import javax.persistence.Id;
+import javax.persistence.JoinColumn;
+import javax.persistence.ManyToOne;
+import javax.persistence.OneToMany;
+
+@Entity
+public class Member {
+
+  @Id
+  private Long id;
+  @ManyToOne
+  @JoinColumn(name = "TEAM_ID")
+  private Team team;
+
+  public void setTeam(Team team) {
+    this.team = team;
+
+    if (!team.getMembers().contains(this)) {
+      team.getMembers.add(this);
+    }
+  }
+}
+
+@Entity
+public class Team {
+
+  @Id
+  @Column(name = "TEAM_ID")
+  private Long id;
+
+  private String name;
+
+  @OneToMany(mappedBy = "team")
+  private List<Member> members = new ArrayList<>();
+  
+  public void addMember(Member member) {
+      this.members.add(member);
+      if (member.getTeam() != this) { // 무한 루프에 빠지지 않도록 체크
+          member.setTeam(this);
+      }
+  }
+}
+```
+
+양방향은 외래키가 있는 곳이 항상 주인이다.
+
+양방향 연관관계는 항상 서로를 참조해야 한다.
+양방향 연관관계는 항상 서로 참조해야 한다. 어느 한 쪽만 참조하면 양방향 연관관계가 성립하지 않는다. 항상 서로 참조하게 하려면 연관관계
+편의 메소드를 작성하는 것이 좋다. (setTeam, addMember) 편의 메소드를 양쪽에 다 작성해서 둘중 하나만 호출하면 된다. 또한 무한루프를
+조심하자
+
+## 일대다
+
+일대다 관계는 다대일 관계의 반대방향이다. 일대다 관계는 엔티티를 하나이상 참조할 수 있으므로 자바 컬렉션인 Collection, List, Set, Map 중에 하나를 사용해야한다.
+
+### 일대다 단방향 [1:N]
+하나의 팀은 여러 회원을 참조 할 수 있는데 이런 관계를 일대다 관계라 한다. 그리고 팀은 회원들을 참조하지만 회원은 팀을 참조하지 않으면 
+단방향이다.
+
+일대다 단방향관계는 약간 특이한데 Team.members로 회원 테이블의 TEAM_ID를 관리한다.
+
+```java
+import java.util.ArrayList;
+import javax.persistence.Column;
+import javax.persistence.Entity;
+import javax.persistence.Id;
+import javax.persistence.JoinColumn;
+import javax.persistence.ManyToOne;
+import javax.persistence.OneToMany;
+
+@Entity
+public class Member {
+
+  @Id
+  private Long id;
+  @ManyToOne
+  @JoinColumn(name = "TEAM_ID")
+  private Team team;
+
+//...
+}
+
+@Entity
+public class Team {
+
+  @Id
+  @Column(name = "TEAM_ID")
+  private Long id;
+
+  private String name;
+
+  @OneToMany
+  @JoinColumn(name = "TEAM_ID") // 위 데이터베이스와 같다. 특이하게 Member에 있는 TEAM_ID (FK)를 Team 객체에서 관리한다.
+  //반대편 테이블의 외래키를 관리하는 모습이다.
+  private List<Member> members = new ArrayList<>();
+}
+```
+
+일대다 단방향 관계를 매핑할 때에는 joincolumn을 쓰지 않는다면 JPA는 연결 테이블을 중간에 두고 연관관계를 관리하는 조인 테이블 전략을 기본으로 사용해서 매핑한다.
+
+단점으로는 매핑한 객체가 관리하는 외래키가 다른 테이블에 있다는 점이다. 본인 테이블에 외래키가 있으면 엔티티의 저장과 연관관계 처리를
+INSERT SQL 한 번으로 끝낼 수 있지만, 다른테이블에 있기 때문에 UPDATE를 추가적으로 처리로 해결해야한다..
+
+```java
+class Test {
+    void test() {
+        Member member1 = new Member("test");
+      Member member2 = new Member("test2");
+      
+      Team team1 = new Team("tea");
+      team1.getMembers().add(member1);
+      team1.getMembers().add(member2);
+      
+      em.persist(member1); // insert member1
+      em.persist(member2); // insert member2
+      em.persist(team1); // insert team1, update member1.fk, update member2.kf 두번이나 업데이트를 따로 때린다..
+    }
+}
+```
+
+일대다 단방향 매핑보다는 다대일 양방향 매핑을 사용하자
