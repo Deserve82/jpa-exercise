@@ -181,3 +181,125 @@ class Test {
 ```
 
 일대다 단방향 매핑보다는 다대일 양방향 매핑을 사용하자
+
+### 일대다 양방향 [1:N], [N:1]
+
+일대다 양방향 매핑은 존재하지 않는다. 대신 다대일 매핑을 사용해야 한다. 정확히 말하자면 양방향 매핑에서 @OneToMany는 연관관계의 주인이
+될 수 없다. 관계형 데이터베이스 특성상 일대다 쪽에는 항상 다쪽에 외래키가 있다. 그러므로 양방향은 존재하지 않는다.
+
+완전히 불가능한 것은 아니지만 사용할 것이라면 다대일 양방향 매핑을 사용하자
+
+## 일대일 [1:1]
+
+일대일 관계는 양쪽이 서로 하나의 관계만 가진다. 특징으로는 다음과 같은 것들이 있다.
+- 일대일 관계는 그 반대도 일대일 관계이다.
+- 테이블 관계에서 일대다, 다대일은 항상 다(N)쪽이 외래 키를 가진다. 반면 일대일 관계에서는 주 태이블이나 대상 태이블 중 어느곳이나 외래키를 가질 수 있다.
+
+일대일 관계는 주 테이블이나 대상 테이블에서 누가 외래키를 가질 지 선택해야한다.
+
+#### 주테이블에 외래 키
+(Member에 FK인 locker_id가 있는 경우)
+단방향
+
+```java
+import javax.persistence.Column;
+import javax.persistence.Entity;
+import javax.persistence.Id;
+import javax.persistence.JoinColumn;
+import javax.persistence.OneToOne;
+
+@Entity
+public class Member {
+
+  @Id
+  @Column(name = "MEMBER_ID")
+  private Long id;
+
+  @OneToOne
+  @JoinColumn(name = "LOCKER_ID")
+  private Locker locker;
+}
+
+@Entity
+public class Locker {
+
+  @Id
+  @Column(name="LOCKER_ID")
+  private Long id;
+}
+```
+
+이 관계는 다대일 단방향과 유사하다.
+
+양방향
+```java
+import javax.persistence.Column;
+import javax.persistence.Entity;
+import javax.persistence.Id;
+import javax.persistence.JoinColumn;
+import javax.persistence.OneToOne;
+
+@Entity
+public class Member {
+
+  @Id
+  @Column(name = "MEMBER_ID")
+  private Long id;
+
+  @OneToOne
+  @JoinColumn(name = "LOCKER_ID")
+  private Locker locker;
+}
+
+@Entity
+public class Locker {
+
+  @Id
+  @Column(name="LOCKER_ID")
+  private Long id;
+
+  @OneToOne(mappedBy = "locker")
+  private Member member;
+}
+```
+양방향이므로 주인을 정해야 한다. 
+
+### 대상 테이블에 외래키
+이번에는 대상 테이블에 외래키가 있는 일대일 관계를 보자.
+(Locker에 FK, member_id가 있는 경우)
+
+단방향
+
+일대일 관계 중 대상 테이블에 외래키가 있는 단방향 관계는 JPA에서 지원하지 않는다. 
+
+양방향
+```java
+import javax.persistence.Column;
+import javax.persistence.Entity;
+import javax.persistence.Id;
+import javax.persistence.JoinColumn;
+import javax.persistence.OneToOne;
+
+@Entity
+public class Member {
+
+  @Id
+  @Column(name = "MEMBER_ID")
+  private Long id;
+
+  @OneToOne(mappedBy = "member")
+  private Locker locker;
+}
+
+@Entity
+public class Locker {
+
+  @Id
+  @Column(name="LOCKER_ID")
+  private Long id;
+
+  @OneToOne
+  @JoinColumn(name = "MEMBER_ID")
+  private Member member;
+}
+```
