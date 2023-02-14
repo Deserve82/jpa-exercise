@@ -303,3 +303,114 @@ public class Locker {
   private Member member;
 }
 ```
+
+## 다대다[N:N]
+
+관계형 데이터베이스는 정규화된 테이블로 다대다 관계를 표현 할 수 없다. 하지만 객체는 테이블과 다르게 객체 2개로 다대다 관계를 만들 수 있다.
+
+### 다대다: 단방향
+
+디비 구조는 
+맴버 - 멤버상품연결테이블 - 상품 으로 되어있다.
+
+```java
+import java.util.ArrayList;
+import javax.persistence.Column;
+import javax.persistence.Entity;
+import javax.persistence.Id;
+import javax.persistence.JoinColumn;
+import javax.persistence.JoinTable;
+import javax.persistence.ManyToMany;
+import javax.persistence.ManyToOne;
+
+@Entity
+public class Member {
+
+  @Id
+  @Column(name = "MEMBER_ID")
+  private String id;
+
+  private String username;
+
+  @ManyToMany
+  @JoinTable(name = "MEMBER_PRODUCT",
+          joinColumns = @JoinColumn(name = "MEMBER_ID"),
+          inverseJoinColumns = @JoinColumn(name = "PRODUCT_ID")
+  )
+  private List<Product> products = new ArrayList<>();
+}
+
+@Entity
+public class Product {
+    @Id
+    @Column(name = "PRODUCT_ID")
+  private String id;
+    
+    private String name;
+}
+```
+
+@JoinTable 로 연결 테이블을 지정한다.
+@JoinTable.joinColumns 현재 방향인 회원과 매핑할 조인 칼럼 정보를 지정한다.
+@JoinTable.inverseJoinColumns 반대 방향인 상품과 매핑할 조인 칼럼 정보를 지정한다. PRODUCT_ID이다.
+
+```java
+// 다대다 저장
+public void save() {
+    Product productA = new Product();
+        productA.setId("productA");
+        em.persist(productA);
+        
+        Member m1 = new Member;
+        m1.getProducts.add(productA);
+        em.persist(m1);
+        }
+```
+
+### 다대다 : 양방향
+
+다대다는 역방향도 @ManyToMany를 사용한다. 그리고 원하는 곳에 mappedBy로 연관관계의 주인을 지정한다.
+
+```java
+import javax.persistence.ManyToMany;
+
+@Entity
+public class Product {
+
+  @Id
+  @Column(name = "PRODUCT_ID")
+  private String id;
+
+  @ManyToMany(mappedBy = "products") // 역방향 추가
+  private String name;
+}
+```
+
+다대다 양방향 연관관계는 다음처럼 설정하면 된다.
+
+```java
+member.getProducts().add(product);
+product.getMembers().add(member);
+```
+
+편의 메소드를 회원 엔티티에 추가하자
+
+```java
+public void addProduct(Product product){
+    products.add(product);
+    product.getMember().add(this);
+        }
+```
+
+### 다대다 : 매핑의 한계와 극복, 연결 엔티티 사용
+
+사실 실무에서 한계가 있다. 이 연결 테이블은 단순히 주문회원 아이디와 상품 아이디만 들어가는 것이 아니다.
+보통은 연결테이블에 여러가지 주문 수량이나 날짜 같은 컬럼이 더 필요하다. 
+
+이렇게 된다면 더 이상 ManyToMany는 사용 할 수 없다. 추가 정보들을 매핑 할 수 없다. 
+
+기본적으로 복합키와 식별관계 (기본키 + 외래키)가 되기 때문에 불편해진다.
+
+### 다대다 : 새로운 기본 키 사용
+자동으로 생성해주는 대리키를 Long 값으로 사용하는 것이다. 이것은 비지니스에 의존적이지 않는다.
+단순하게 매핑이 가능하고 편리하다.
