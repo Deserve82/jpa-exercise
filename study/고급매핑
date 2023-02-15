@@ -1,0 +1,135 @@
+## 상속관계 매핑
+
+관계형 데이터베이스에는 객체지향 언어에서 다루는 상속이라는 개념이 없다. 대신 슈퍼 타입 - 서브타입 관계라는 모델링 기법이 객체의 상속 개념과 
+가장 유사하다. 
+
+이런 슈퍼타입 - 서브타입 논리 모델을 실제 물리 모델인 테이블로 구현할 때에는 3가지 방법이 있다.
+- 각각 테이블로 변환 : 조회 할 때에 조인을 사용한다. (슈퍼 타입 테이블 PK를 서브 타입 테이블의 PK로 넣어줌) / JPA에서는 조인 전략이라 한다.
+- 통합 테이블로 변환 : 테이블을 하나만 사용해서 통합한다. (걍 다 때려박기) / JPA에서는 단일 테이블 전략이라 한다.
+- 서브타입 테이블로 변환 : 서브타입마다 하나의 테이블을 만든다. / JPA에서는 구현클래스 마다 테이블 전략이라 한다.
+
+### 조인 전략
+
+엔티티 각각 모두 테이블로 만들고 자식 테이블이 부모 테이블의 기본키를 받아서 기본키 + 외래 키로 사용하는 전략이다.
+조회할 때에 조인을 자주 사용한다. 테이블은 참고로 조인을 하기 때문에 어떤 타입인지 알 수 있는 방법이 없다. 따라서 DTYPE을 따로 넣어준다.
+
+![](../src/main/resources/static/img/join_table.png)
+
+```java
+import javax.persistence.Column;
+import javax.persistence.DiscriminatorColumn;
+import javax.persistence.DiscriminatorValue;
+import javax.persistence.Entity;
+import javax.persistence.GeneratedValue;
+import javax.persistence.Id;
+import javax.persistence.Inheritance;
+import javax.persistence.InheritanceType;
+
+@Entity
+@Inheritance(strategy = InheritanceType.JOINED) // 상속 매핑은 부모클래스의 @Inheritance 를 사용해야한다. 
+@DiscriminatorColumn(name = "DTYPE") // 부모 클래스에 구분 컬럼을 지정한다. 이 컬럼으로 지정된 자식 테이블을 구분한다.
+public abstract class Item {
+
+    @Id
+    @GeneratedValue
+    @Column(name = "ITEM_ID")
+    private Long id;
+
+    private String name;
+    private int price;
+}
+
+@Entity
+@DiscriminatorValue("A") // 엔티티를 저장할 때 구분 칼럼에 입력할 값을 지정한다. 
+public class Album extends Item {
+    private String artist;
+}
+
+@Entity
+@DiscriminatorValue("M")
+public class Movie extends Item {
+    private String director;
+    private String actor;
+}
+```
+
+기본적으로 자식테이블은 부모 테이블의 ID 칼럼명을 그대로 사용하는데 만약 자식 테이블의 기본키 컬럼명을 변경하고 싶다면 다음과 같이 하면 된다.
+
+```java
+import javax.persistence.DiscriminatorValue;
+import javax.persistence.Entity;
+import javax.persistence.PrimaryKeyJoinColumn;
+
+@Entity
+@DiscriminatorValue("B")
+@PrimaryKeyJoinColumn(name = "BOOK_ID")
+public class Book extends Item {
+    private String author;
+    private String isbn;
+}
+```
+
+**장점**
+- 테이블이 정규화 된다
+- 외래키 참조 무결성 제약 조건을 활용 할 수 있다.
+- 저장공간을 효율적으로 사용한다.
+
+**단점**
+- 조회 할 때 조인이 많이 사용되므로 성능이 저하될 수 있다.
+- 조회 쿼리가 복잡하다
+- 데이터를 등록할 때에 INSERT SQL 을 두 번 실행한다.
+
+
+### 단일 테이블 전략 
+
+테이블 하나만 사용한다. 조인을 사용하지 않으므로 일반적으로 가장 빠르다.
+
+![](../src/main/resources/static/img/single_table.png)
+
+주의 해야할 점은 자식 엔티티가 매핑한 칼럼은 모두 null 을 허용해야 한다는 점이다.
+
+```java
+
+import javax.persistence.Column;
+import javax.persistence.DiscriminatorColumn;
+import javax.persistence.DiscriminatorValue;
+import javax.persistence.Entity;
+import javax.persistence.Id;
+import javax.persistence.Inheritance;
+import javax.persistence.InheritanceType;
+
+@Entity
+@Inheritance(strategy = InheritanceType.SINGLE_TABLE)
+@DiscriminatorColumn(name = "DTYPE")
+public abstract class Item {
+
+    @Id
+    @Column(name = "ITEM_ID")
+    private Long id;
+
+    private String name;
+    private int price;
+}
+
+@Entity
+@DiscriminatorValue("A")
+public class Album extends Item { ... }
+
+@Entity
+@DiscriminatorValue("M")
+public class Moive extends Item { ... }
+
+@Entity
+@DiscriminatorValue("B")
+public class Book extends Item { ... }
+```
+
+**장점**
+- 조인이 필요 없으므로 조회 성능 굿
+- 조회 쿼리 단순
+
+**단점**
+- 자식 엔티티가 매핑한 칼럼은 모두 null을 허용해야 한다.
+- 단일 테이블에 모든 것을 저장하므로 테이블이 커질 수 있다. 오히려 상황에 따라 느려지기도 가능
+
+구분 컬럼을 반드시 사용해야한다. @DiscriminatorColumn 을 꼭 설정해야한다.
