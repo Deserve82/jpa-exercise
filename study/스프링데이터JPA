@@ -1,0 +1,111 @@
+# 스프링 데이터 JPA
+
+## 소개
+
+스프링 데이터 JPA는 스프링 프레임워크에서 JPA 를 편하게 사용할 수 있도록 지원하는 프로젝트이다. 지루하게 반복되는 CRUD 문제를 쉽게 처리하기 위한
+공통 인터페이스를 제공한다. 그리고 레포지토리를 개발할 때 인터페이스만 작성하면 실행 시점에 스프링 데이터 JPA 가 구현 객체를 동적으로 생성해 주입해준다.
+따라서 인터페이스만 만들어도 개발을 완료 할 수 있다.
+
+공통으로 처리할 수 없는 메소드는 이름을 분석해서 JPQL을 실행한다. `findByUsername(String Username)` -> `SELECT m form Member where username =:username`
+
+### 스프링 데이터 프로젝트
+
+스프링 데이터 JPA는 스프링 데이터 프로젝트의 하위 프로젝트 중 하나이다. 스프링 데이터 프로젝트는 JPA, 몽고 DB, NEO4J, REDIS,
+HADOOP 등 다양한 데이터 저장소에 대한 접근을 추상화 해서 개발자 편의 제공하고 데이터 접근 코드를 줄여준다.
+
+## 공통 인터페이스 기능
+
+spring-data-jpa는 spring-data-commmon에 의존하므로 두 라이브러리를 함게 받는다.
+
+![](../src/main/resources/static/img/12-4.png)
+
+주요 메소드는 다음과 같다 (S는 엔티티와 그 자식, T는 엔티티, ID는 엔티티의 식별자 타입)
+- save(S) : 메소드는 엔티티에 식별자 값이 없으면 새로운 엔티티로 판단하고 persist()를 호출하고 실별자 값이 있으면 있는 엔티티로 판단해서 merge()를 호출한다. 필요하다면 spring data jpa 기능을 확장해서 신규 엔티티 판단 전략을 변경할 수 있다.
+- delete(T) : 내부적으로는 remove()를  호출한다. 엔티티를 삭제한다.
+- findOne(ID) : 엔티티를 조회한다. find() 를 호출
+- getReference(ID) : proxy 객체를 반환시켜준다. getReference() 를 반환한다.
+- findAll(...) : 모든 엔티티 조회, 정렬이나 페이징 조건 파라미터로 제공 할 수 있다.
+
+## 쿼리 메소드 기능
+쿼리 메소드 기능은 스프링 데이터 JPA 가 제공하는 기능이다. 스프링 데이터 JPA 가 제공하는 쿼리 메소드 기능은 크게 3가지가 있다.
+
+- 메소드 이름으로 쿼리 생성
+- 메소드 이름으로 JPA NamedQuery 호출
+- @Query 어노테이션을 사용해서 레포지토리 인터페이스에 쿼리 직접 정의
+
+### 메소드 이름으로 쿼리 생성
+정해진 규칙에 따라서 메소드 이름을 짓는 방식, 엔티티 필드명을 그대로 가져와서 쓴다.
+```java
+List<Member> findByEmailAndName(String email, String name);
+```
+
+### JPA NamedQuery
+
+이름 그대로 쿼리에 이름을 부여해서 사용하는 방법, 어노테이션이나 XML에 쿼리를 정의 할 수 있다.
+
+```java
+import javax.persistence.Entity;
+import javax.persistence.NamedQuery;
+
+@Entity
+@NamedQuery(
+        name = "Member.findByUsername",
+        query = "select m from Member m where m.username =:username"
+)
+public class Member {
+    ...
+}
+```
+
+이렇게 정의한 Named 쿼리를 JPA 에서 직접 호출하려면 다음과 같이 코드를 작성하면 된다. (스프링 데이터 JPA 사용)
+
+```java
+public interface MemberRepository extends JpaRepository<Member, Long>{
+    List<Member> findByUsername(@Param("username") String username);
+} // spring data jpa 가 아니었다면, em.createNamedQuery("Member.findByUsername", Member.class).getResult ... 해야함.. 
+```
+
+### @Query, 리포지토리 메소드에 쿼리 정의
+리포지토리 메소드에 직접 쿼리를 정의 할 수 있다.
+
+```java
+public interface MemberRepository extends JpaRepository<Member, Long>{
+    
+    @Query("select m from Member m where m.username = ?1") // native 쿼리라면 nativeQuery=true 를 사용하면 된다.
+    List<Member> findByUsername(String username);
+} 
+```
+
+### 파라미터 바인딩
+
+스프링 데이터 JPA는 위치 기반 파라미터 바인딩과 이름 기반 파라미터 바인딩 모두 지원한다.
+```java
+select m from Member m where m.username = ?1 // 위치기반
+select m from Member m where m.username =:username // 이름 기반
+```
+코드의 가독성을 위해 이름 기반 파라미터를 사용하도록 하자
+
+### 벌크성 수정 쿼리
+
+```java
+// JPA 로 작성된 벌크성 수정 쿼리
+int bulkPriceUp(String stockAmount) {
+    String qlString = "update Proudct p set p.price = p.price * 1.1" 
+        + " where p.stockAmount < :stockAmount";
+    
+    int resultCount = em.createQuery(qlString)
+        .setParameter("stockAmount", stockAmount)
+        .executeUpdate();
+        }
+```
+
+다음은 JPA를 이용한 벌크성 수정 쿼리이다.
+```java
+@Modifying
+@Query("update Proudct p set p.price = p.price * 1.1"
+        + " where p.stockAmount < :stockAmount")
+int bulkPriceUp(@Param("stockAmount") String stockAmount);
+```
+
+
+
