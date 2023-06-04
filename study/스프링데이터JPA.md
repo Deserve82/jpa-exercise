@@ -130,3 +130,191 @@ List<Member> members = result.getContent();
 int totalPages = result.getTotalPage();
 boolean hasNextPage = result.hasNextPage();
 ```
+
+
+### JPA 쿼리 힌트
+JPA를 사용하면 영속성 컨텍스트에 저장되어 관리되고 flush 하거나 dirty checking 이 가능하다. 하지만 이런 부분을 사용하지 않고 
+기능을 이용하려고 한다면 Read Only 쿼리 힌트를 사용하면 된다.
+```java
+
+@Repository
+public interface MemberRepository extends JpaRepository<Member, Long> {
+    @QueryHints(value = @QueryHint(name = "org.hibernate.readOnly", value = "true")) 
+    Member findMemberByUsername(String username);
+}
+```
+
+### Lock 기능
+
+```java
+@Repository
+public interface MemberRepository extends JpaRepository<Member, Long> {
+    @Lock(LockModeType.PESSIMISTIC_WRITE) 
+    List<Member> findMembersByUsername(String username);
+}
+```
+
+## 명세
+
+다양한 검색조건을 조립해서 새로운 검색조건을 만들어내는 기능이라고 생각하면된다. 다만 복잡도가 높아서 실무에서 안쓰이는 것을 추첝
+
+```java
+public class MemberSpec {
+
+    public static Specification<Member> teamName(final String teamName) {
+        return (Specification<Member>) (root, query, criteriaBuilder) -> {
+
+            if(StringUtils.isEmpty(teamName)) {
+                return null;
+            }
+
+            Join<Member, Team> t = root.join("team", JoinType.INNER);// 회원과 조인
+            return criteriaBuilder.equal(t.get("name"), teamName);
+        };
+    }
+
+    public static Specification<Member> username(final String username) {
+        return (Specification<Member>) (root, query, criteriaBuilder) ->
+            criteriaBuilder.equal(root.get("username"), username);
+    }
+}
+```
+
+```java
+@Test
+public void specBasic() {
+    Team teamA = new Team("teamA");
+    em.persist(teamA);
+
+    Member m1 = new Member("m1", 0, teamA);
+    Member m2 = new Member("m2", 0, teamA);
+    em.persist(m1);
+    em.persist(m2);
+
+    em.flush();
+    em.clear();
+
+    Specification<Member> spec = MemberSpec.username("m1").and(MemberSpec.teamName("teamA"));
+
+    List<Member> result = memberRepository.findAll(spec);
+
+    Assertions.assertThat(result.size()).isEqualTo(1);
+}
+```
+
+## 사용자 정의 레포지토리 구현
+```java
+// 기존의 사용자 정의 레포지토리
+
+public interface MemberRepository {
+    Member save(Member member);
+}
+
+// 사용자 정의 레포지토리
+
+public interface JpaMemberRepository extends JpaRepository<Member, Long>, MemberRepository {
+    
+}
+```
+
+
+## Web 확장
+
+스프링 데이터 프로젝트는 스프링 MVC에서 사용할 수 있는 편리한 기능을 제공한다. 식별자로 도메인 클래스를 바로 바인딩해주는 도메인 클래스 
+컨버터 기능과 페이징 기능이 있다
+
+### 설정
+사용하기 위해서는 다음과 같이 어노테이션을 정의한다.
+```java
+@EnableSpringDataWebSupport
+public class WebAppConfig {
+    // ...
+}
+```
+
+### 도메인 클래스 컨버터 기능
+
+도메인 클래스 컨버터는 HTTP로 넘어온 엔티티의 아이디로 객체를 찾아서 바인딩해준다.
+
+```java
+@Controller
+public class MemberController {
+    @Authwired MemberRepository memberRepository;
+    
+    @RequestMapping("member/memberUpdateForm")
+    public String memberUpdateForm(@RequestParam("id") Long id, Model model) {
+        Member member = memberRepository.findOne(id);
+        model.addAttribute("member", member);
+        return "member/memberSaveForm";
+    } // 도메인 클래스 컨버터를 적용 안했을 때
+
+    @RequestMapping("member/memberUpdateForm")
+    public String memberUpdateForm(@RequestParam("id") Member member, Model model) {
+        model.addAttribute("member", member);
+        return "member/memberSaveForm";
+    } // 도메인 클래스 컨버터를 적용 했을 때
+    
+}
+```
+
+해당 엔티티와 관련된 레포지토리를 통해서 찾는다. 하지만 도메인 클래스 컨버터를 통해서 넘어온 회원 엔티티를 실제로 수정해도 실제 데이터 
+베이스에는 반영되지 않는다. 
+
+### 페이징과 정렬기능 
+
+```java
+@RequestMapping(value="/members", method=RequestMethod.GET)
+public String list(Pageable pageable, Model model) {
+    Page<Member> page = memberService.findMembers(pageable);
+    model.addAttribute("members", page.getContent());
+    return "members/memberList";
+        }
+```
+
+사용해야할 페이징 정보가 둘 이상이면 접두사로 구분할 수 있다.
+
+```java
+@Qualifier("member") Pageable memberPageable,
+@Qualifier("order") Pageable orderPageable
+```
+
+## 스프링 데이터 JPA 가 사용하는 구현체
+JPA 에 있는 SimpleJpaRepository 클래스가 Jpa 구현체이다. 
+
+@Transactional -> JPA의 모든 변경은 트랜잭션 안에서 이루어져야한다. 
+또한 readOnly option이 True로 설정되어있는데 약간의 성능향상이 있을 수 있다. 그렇기에 변경이 필요할 때에는 
+따로 @Transactional을 서비스에서 걸어주는 것이다.
+
+save() 메소드는 식별자가 null 또는 숫자 값이 0일 때에 새로운 엔티티로 판단해 저장한다. 필요하면 엔티티에 Persistable 인터페이스를 
+구현해서 판단 로직을 변경하면 된다.
+
+```java
+import java.io.Serializable;
+
+public interface Persistable<ID extends Serializable> extends Serializable {
+    ID getId();
+    boolean isNew();
+}
+```
+
+## 스프링데이터 JPA와 QueryDsl 통합
+
+```java
+public interface ItemRepository extends JpaRepository<Item, Long>, QueryDslPredicateExcutor<Item> {
+    Iterable<T> findAll(Predicate predicate);
+}
+```
+
+이런식으로 상속받고
+
+```java
+QItem item = QItem.item;
+
+Iterable<Item> result = itemRepository.findAll(
+        item.name.contains("장난감").and(item.price.between(10000, 20000))
+        )
+```
+
+위 처럼 사용하면된다. 다만 이런 QueryDslPredicateExcutor는 편리하게 사용이 가능하지만 join, fetch를 사용할 수는 없다.
+
+그렇기에 QueryDslRepositorySupport 를 사용해서 구현해야한다.
